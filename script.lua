@@ -6,15 +6,15 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CollectionService = game:GetService("CollectionService")
 
--- MAIN GUI
+-- MAIN GUI - Pindah ke tengah saat pertama kali execute (2)
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "HamimSfy"  -- (2) Nama GUI diubah
+screenGui.Name = "HamimSfy"
 screenGui.Parent = playerGui
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local enemyFrame = Instance.new("Frame")
 enemyFrame.Size = UDim2.new(0, 260, 0, 300)
-enemyFrame.Position = UDim2.new(1, -280, 0, 20)
+enemyFrame.Position = UDim2.new(0.5, -130, 0, 20)  -- Tengah layar
 enemyFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
 enemyFrame.BackgroundTransparency = 0.6
 enemyFrame.BorderSizePixel = 0
@@ -26,11 +26,10 @@ local frameCorner = Instance.new("UICorner")
 frameCorner.CornerRadius = UDim.new(0, 16)
 frameCorner.Parent = enemyFrame
 
--- HEADERS & CONTROLS
+-- HEADERS & CONTROLS - Hapus teks Hamimsfy (5)
 local header = Instance.new("TextLabel")
 header.Size = UDim2.new(1, 0, 0, 35)
-header.Text = "HAMIMSFY"  -- (2) nama GUI, bisa disingkat biar muat
-header.TextColor3 = Color3.fromRGB(255, 255, 255)
+header.Text = ""  -- Kosong
 header.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
 header.BackgroundTransparency = 0.4
 header.TextSize = 14
@@ -41,15 +40,15 @@ local headerCorner = Instance.new("UICorner")
 headerCorner.CornerRadius = UDim.new(0, 16)
 headerCorner.Parent = header
 
--- TOMBOL RANGE (3) di kiri atas dalam GUI
+-- TOMBOL RANGE di kiri atas dalam GUI
 local MAX_DISTANCE = 200
 local rangeOptions = {100, 200, 300, 400, 500}
-local currentRangeIndex = 2  -- 200 adalah index 2
+local currentRangeIndex = 2
 
 local rangeButton = Instance.new("TextButton")
 rangeButton.Size = UDim2.new(0, 70, 0, 25)
 rangeButton.Position = UDim2.new(0, 10, 0, 5)
-rangeButton.Text = MAX_DISTANCE .. "m"  -- teks = value awal
+rangeButton.Text = MAX_DISTANCE .. "m"
 rangeButton.TextSize = 11
 rangeButton.Font = Enum.Font.GothamBold
 rangeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -68,14 +67,31 @@ rangeButton.MouseButton1Click:Connect(function()
         currentRangeIndex = 1
     end
     MAX_DISTANCE = rangeOptions[currentRangeIndex]
-    rangeButton.Text = MAX_DISTANCE .. "m"  -- teks selalu ikut value
+    rangeButton.Text = MAX_DISTANCE .. "m"
 end)
 
--- TOMBOL CLOSE ❌ di kanan dalam GUI (1)
+-- TOMBOL PLAYER 👤 di kanan tombol range (1)
+local playerButton = Instance.new("TextButton")
+playerButton.Size = UDim2.new(0, 35, 0, 25)
+playerButton.Position = UDim2.new(0, 90, 0, 5)
+playerButton.Text = "Player"
+playerButton.Font = Enum.Font.GothamBold
+playerButton.TextSize = 12
+playerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+playerButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+playerButton.BackgroundTransparency = 0.4
+playerButton.BorderSizePixel = 0
+playerButton.Parent = enemyFrame
+
+local playerCorner = Instance.new("UICorner")
+playerCorner.CornerRadius = UDim.new(0, 8)
+playerCorner.Parent = playerButton
+
+-- TOMBOL CLOSE ❌ di kanan dalam GUI
 local closeButton = Instance.new("TextButton")
 closeButton.Size = UDim2.new(0, 30, 0, 25)
 closeButton.Position = UDim2.new(1, -40, 0, 5)
-closeButton.Text = "❌"
+closeButton.Text = "X"
 closeButton.Font = Enum.Font.GothamBold
 closeButton.TextSize = 13
 closeButton.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -88,10 +104,21 @@ local closeCorner = Instance.new("UICorner")
 closeCorner.CornerRadius = UDim.new(0, 8)
 closeCorner.Parent = closeButton
 
+-- Player button functionality (3 & 4)
+playerButton.MouseButton1Click:Connect(function()
+    -- Reset mobs GUI (4)
+    screenGui.Enabled = false
+    screenGui:Destroy()
+    enemies = {}
+    currentIndex = 1
+    
+    -- Load player radar script (3)
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/freedom-gun/Radar/main/player.lua"))()
+end)
+
 closeButton.MouseButton1Click:Connect(function()
     screenGui.Enabled = false
     screenGui:Destroy()
-    -- Reset variabel global
     enemies = {}
     currentIndex = 1
 end)
@@ -115,11 +142,11 @@ local playerList = Players:GetPlayers()
 Players.PlayerAdded:Connect(function() playerList = Players:GetPlayers() end)
 Players.PlayerRemoving:Connect(function() playerList = Players:GetPlayers() end)
 
--- DETECTOR (GUNAKAN playerList CACHE)
+-- DETECTOR
 local function isEnemy(model)
     if not model or model == player.Character then return false end
 
-    for _, p in ipairs(playerList) do  -- OPTIMASI: GUNAKAN CACHE
+    for _, p in ipairs(playerList) do
         if model == p.Character then return false end
     end
 
@@ -154,7 +181,7 @@ local function isEnemy(model)
     return true
 end
 
--- OPTIMASI 1: COLLECTION SERVICE (FALLBACK ke original jika ga ada tag)
+-- OPTIMASI 1: COLLECTION SERVICE
 local enemies = {}
 local currentIndex = 1
 
@@ -164,11 +191,10 @@ local function updateEnemies()
 
     local charRoot = player.Character.HumanoidRootPart.Position
 
-    -- OPTIMASI: Coba CollectionService dulu (jika ada tag "Enemy")
     local taggedEnemies = CollectionService:GetTagged("Enemy")
     if #taggedEnemies > 0 then
         for _, model in ipairs(taggedEnemies) do
-            if isEnemy(model) then  -- tetep validasi
+            if isEnemy(model) then
                 local humanoid = model:FindFirstChild("Humanoid")
                 local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
                 if rootPart then
@@ -180,7 +206,6 @@ local function updateEnemies()
             end
         end
     else
-        -- FALLBACK: original logic jika belum ada tag
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("Model") and isEnemy(obj) then
                 local humanoid = obj:FindFirstChild("Humanoid")
@@ -198,7 +223,6 @@ local function updateEnemies()
     table.sort(enemies, function(a, b) return a.distance < b.distance end)
 end
 
--- Populate list
 local function populateList()
     for _, child in ipairs(scrollFrame:GetChildren()) do
         if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
@@ -243,7 +267,6 @@ local function populateList()
     scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
 end
 
--- Update
 local lastUpdate = 0
 RunService.Heartbeat:Connect(function()
     if tick() - lastUpdate > 1 and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -255,12 +278,12 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Toggle button
+-- Toggle button - Ubah nama Mini dan ukuran sedang (5)
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0, 45, 0, 25)
-toggleBtn.Position = UDim2.new(1, -55, 0, 25)
-toggleBtn.Text = "RADAR"
-toggleBtn.TextSize = 10
+toggleBtn.Size = UDim2.new(0, 60, 0, 35)  -- Ukuran sedang
+toggleBtn.Position = UDim2.new(1, -70, 0, 25)
+toggleBtn.Text = "Mini"  -- Ubah dari RADAR
+toggleBtn.TextSize = 11
 toggleBtn.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
 toggleBtn.BackgroundTransparency = 0.4
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -275,7 +298,7 @@ local visible = true
 toggleBtn.MouseButton1Click:Connect(function()
     visible = not visible
     enemyFrame.Visible = visible
-    toggleBtn.Text = visible and "RADAR" or "OFF"
+    toggleBtn.Text = visible and "Mini" or "Hamimsfy"  -- OFF jadi Hamimsfy
 end)
 
 -- NEXT button
