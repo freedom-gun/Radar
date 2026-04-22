@@ -66,6 +66,8 @@ rangeButton.MouseButton1Click:Connect(function()
     if currentRangeIndex > #rangeOptions then currentRangeIndex = 1 end
     MAX_DISTANCE = rangeOptions[currentRangeIndex]
     rangeButton.Text = MAX_DISTANCE .. "m"
+    updatePlayers() -- Update players saat range berubah
+    populateList()
 end)
 
 -- NPC BUTTON (FIX)
@@ -128,8 +130,10 @@ listLayout.Parent = scrollFrame
 
 -- VARIABLES
 local players = {}
+local playerButtons = {} -- Store buttons untuk update distance saja
 local currentIndex = 1
 local lastUpdate = 0
+local lastPlayerUpdate = 0 -- Separate timer untuk full player update
 
 -- FUNCTIONS
 local function isTargetPlayer(plr)
@@ -172,6 +176,7 @@ local function clearList()
             child:Destroy()
         end
     end
+    playerButtons = {} -- Clear stored buttons
 end
 
 local function populateList()
@@ -188,7 +193,7 @@ local function populateList()
         noPlayer.TextWrapped = true
         noPlayer.Parent = scrollFrame
     else
-        for _, target in ipairs(players) do
+        for i, target in ipairs(players) do
             -- ROW FRAME
             local row = Instance.new("Frame")
             row.Size = UDim2.new(1, 0, 0, 30)
@@ -215,11 +220,11 @@ local function populateList()
             local btn = Instance.new("TextButton")
             btn.Name = "PlayerBtn"
             btn.Size = UDim2.new(1, -35, 1, 0)
-            btn.Position = UDim2.new(0, 42, 0, 0) -- DIPINDAH KEKANAN (dari 32 ke 42)
+            btn.Position = UDim2.new(0, 42, 0, 0)
             btn.BackgroundColor3 = Color3.fromRGB(60, 25, 25)
             btn.BackgroundTransparency = 0.3
             btn.BorderSizePixel = 0
-            btn.Text = target.name .. "  |  " .. math.floor(target.distance) .. "m" -- TAMBAH SEPARATOR "|"
+            btn.Text = target.name .. "  |  " .. math.floor(target.distance) .. "m"
             btn.TextColor3 = Color3.fromRGB(255, 220, 100)
             btn.TextSize = 11
             btn.Font = Enum.Font.GothamSemibold
@@ -229,6 +234,14 @@ local function populateList()
             local btnCorner = Instance.new("UICorner")
             btnCorner.CornerRadius = UDim.new(0, 6)
             btnCorner.Parent = btn
+
+            -- Store button dengan index untuk fast update
+            playerButtons[i] = {
+                button = btn,
+                row = row,
+                player = target.player,
+                rootPart = target.rootPart
+            }
 
             btn.MouseButton1Click:Connect(function()
                 if target.rootPart and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -241,10 +254,40 @@ local function populateList()
     scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
 end
 
--- MAIN LOOP (STABLE 1.5s)
+-- FAST DISTANCE UPDATE (setiap 0.3s - TIDAK MENGGANTI LIST)
+local function updateDistancesOnly()
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    local charRoot = player.Character.HumanoidRootPart.Position
+    
+    for i, data in pairs(playerButtons) do
+        if data.player and data.player.Character and data.player.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (data.player.Character.HumanoidRootPart.Position - charRoot).Magnitude
+            if dist <= MAX_DISTANCE then
+                data.button.Text = data.player.Name .. "  |  " .. math.floor(dist) .. "m"
+            else
+                -- Hapus jika keluar range
+                data.row:Destroy()
+                playerButtons[i] = nil
+            end
+        end
+    end
+end
+
+-- MAIN LOOP (pisah 2 loop)
+-- 1. Full update setiap 3 detik (rebuild list)
+-- 2. Distance only setiap 0.3 detik (smooth update)
 RunService.Heartbeat:Connect(function()
-    if tick() - lastUpdate > 1.5 and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        lastUpdate = tick()
+    local now = tick()
+    
+    -- Fast distance update (0.3s)
+    if now - lastUpdate > 0.3 then
+        lastUpdate = now
+        updateDistancesOnly()
+    end
+    
+    -- Full player list update (3s - jarang)
+    if now - lastPlayerUpdate > 3 and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        lastPlayerUpdate = now
         updatePlayers()
         populateList()
     end
@@ -284,7 +327,7 @@ nextBtn.BackgroundTransparency = 0.3
 nextBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 nextBtn.Font = Enum.Font.GothamBold
 nextBtn.Active = true
-nextBtn.Draggable = true  -- FIXED
+nextBtn.Draggable = true
 nextBtn.Parent = screenGui
 
 local nextCorner = Instance.new("UICorner")
@@ -292,11 +335,18 @@ nextCorner.CornerRadius = UDim.new(0, 8)
 nextCorner.Parent = nextBtn
 
 nextBtn.MouseButton1Click:Connect(function()
-    if #players == 0 then return end
+    local validPlayers = {}
+    for _, data in pairs(playerButtons) do
+        if data.player and data.player.Character then
+            table.insert(validPlayers, data)
+        end
+    end
+    
+    if #validPlayers == 0 then return end
     currentIndex = currentIndex + 1
-    if currentIndex > #players then currentIndex = 1 end
-    local target = players[currentIndex]
-    if target and target.rootPart and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        player.Character.HumanoidRootPart.CFrame = target.rootPart.CFrame * CFrame.new(0, 0, -4)
+    if currentIndex > #validPlayers then currentIndex = 1 end
+    local targetData = validPlayers[currentIndex]
+    if targetData and targetData.rootPart and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = targetData.rootPart.CFrame * CFrame.new(0, 0, -4)
     end
 end)
