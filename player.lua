@@ -63,7 +63,9 @@ rangeCorner.Parent = rangeButton
 
 rangeButton.MouseButton1Click:Connect(function()
     currentRangeIndex = currentRangeIndex + 1
-    if currentRangeIndex > #rangeOptions then currentRangeIndex = 1 end
+    if currentRangeIndex > #rangeOptions then
+        currentRangeIndex = 1
+    end
     MAX_DISTANCE = rangeOptions[currentRangeIndex]
     rangeButton.Text = MAX_DISTANCE .. "m"
     updatePlayers() -- Update players saat range berubah
@@ -128,12 +130,27 @@ listLayout.Padding = UDim.new(0, 2)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Parent = scrollFrame
 
+-- CACHE PLAYER LIST
+local playerList = Players:GetPlayers()
+Players.PlayerAdded:Connect(function(plr)
+    table.insert(playerList, plr)
+end)
+Players.PlayerRemoving:Connect(function(plr)
+    for i, p in ipairs(playerList) do
+        if p == plr then
+            table.remove(playerList, i)
+            break
+        end
+    end
+end)
+
 -- VARIABLES
-local players = {}
-local playerButtons = {} -- Store buttons untuk update distance saja
+local players = {}          -- hanya player yang terdeteksi dan dalam jarak
+local playerButtonsPool = {} -- reuse tombol; index row
+local playerButtons = {}    -- index => {row, button, player, rootPart}
 local currentIndex = 1
 local lastUpdate = 0
-local lastPlayerUpdate = 0 -- Separate timer untuk full player update
+local lastPlayerUpdate = 0
 
 -- FUNCTIONS
 local function isTargetPlayer(plr)
@@ -150,7 +167,7 @@ local function updatePlayers()
 
     local charRoot = player.Character.HumanoidRootPart.Position
 
-    for _, plr in ipairs(Players:GetPlayers()) do
+    for _, plr in ipairs(playerList) do
         if isTargetPlayer(plr) then
             local rootPart = plr.Character.HumanoidRootPart
             local dist = (rootPart.Position - charRoot).Magnitude
@@ -165,89 +182,126 @@ local function updatePlayers()
         end
     end
 
-    table.sort(players, function(a, b) 
-        return a.distance < b.distance 
+    table.sort(players, function(a, b)
+        return a.distance < b.distance
     end)
 end
 
+-- Bersihkan UI hanya sebatas hide, bukan destroy semua
 local function clearList()
-    for _, child in pairs(scrollFrame:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextLabel") then
-            child:Destroy()
-        end
+    for _, data in pairs(playerButtons) do
+        data.row.Visible = false
     end
-    playerButtons = {} -- Clear stored buttons
+    -- Kosongkan list playerButtons (visual tetap)
+end
+
+-- BUAT tombol jika belum ada, reuse jika ada
+local function getOrCreateRow(index)
+    local data = playerButtons[index]
+    if not data then
+        local row = playerButtonsPool[index]
+        if not row then
+            row = Instance.new("Frame")
+            row.Size = UDim2.new(1, 0, 0, 30)
+            row.BackgroundTransparency = 1
+            row.Parent = scrollFrame
+            playerButtonsPool[index] = row
+        end
+        row.Visible = true
+
+        local headImg = row:FindFirstChild("Head") or Instance.new("ImageLabel")
+        headImg.Name = "Head"
+        headImg.Size = UDim2.new(0, 26, 0, 26)
+        headImg.Position = UDim2.new(0, 2, 0.5, -13)
+        headImg.BackgroundTransparency = 1
+        headImg.Parent = row
+
+        pcall(function()
+            headImg.Image = Players:GetUserThumbnailAsync(data.player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+        end)
+
+        local headCorner = headImg:FindFirstChild("UICorner") or Instance.new("UICorner")
+        headCorner.CornerRadius = UDim.new(1, 13)
+        headCorner.Parent = headImg
+
+        local btn = row:FindFirstChild("PlayerBtn") or Instance.new("TextButton")
+        btn.Name = "PlayerBtn"
+        btn.Size = UDim2.new(1, -35, 1, 0)
+        btn.Position = UDim2.new(0, 42, 0, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(60, 25, 25)
+        btn.BackgroundTransparency = 0.3
+        btn.BorderSizePixel = 0
+        btn.TextColor3 = Color3.fromRGB(255, 220, 100)
+        btn.TextSize = 11
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.Parent = row
+
+        local btnCorner = btn:FindFirstChild("UICorner") or Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 6)
+        btnCorner.Parent = btn
+
+        -- onetime click
+        if not btn:GetAttribute("Connected") then
+            btn.MouseButton1Click:Connect(function()
+                local target = data.rootPart
+                if target and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    player.Character.HumanoidRootPart.CFrame = target.CFrame * CFrame.new(0, 0, -4)
+                end
+            end)
+            btn:SetAttribute("Connected", true)
+        end
+
+        data = {
+            row = row,
+            button = btn,
+            player = nil,
+            rootPart = nil
+        }
+        playerButtons[index] = data
+    else
+        data.row.Visible = true
+    end
+    return data
 end
 
 local function populateList()
     clearList()
 
     if #players == 0 then
-        local noPlayer = Instance.new("TextLabel")
-        noPlayer.Size = UDim2.new(1, 0, 0, 40)
-        noPlayer.BackgroundTransparency = 1
-        noPlayer.Text = "No players nearby"
-        noPlayer.TextColor3 = Color3.fromRGB(100, 255, 100)
-        noPlayer.TextSize = 12
-        noPlayer.Font = Enum.Font.Gotham
-        noPlayer.TextWrapped = true
-        noPlayer.Parent = scrollFrame
+        local noPlayer = scrollFrame:FindFirstChild("NoPlayer")
+        if not noPlayer then
+            noPlayer = Instance.new("TextLabel")
+            noPlayer.Name = "NoPlayer"
+            noPlayer.Size = UDim2.new(1, 0, 0, 40)
+            noPlayer.BackgroundTransparency = 1
+            noPlayer.Text = "No players nearby"
+            noPlayer.TextColor3 = Color3.fromRGB(100, 255, 100)
+            noPlayer.TextSize = 12
+            noPlayer.Font = Enum.Font.Gotham
+            noPlayer.TextWrapped = true
+            noPlayer.Parent = scrollFrame
+        end
+        noPlayer.Visible = true
     else
+        local noPlayer = scrollFrame:FindFirstChild("NoPlayer")
+        if noPlayer then
+            noPlayer.Visible = false
+        end
+
         for i, target in ipairs(players) do
-            -- ROW FRAME
-            local row = Instance.new("Frame")
-            row.Size = UDim2.new(1, 0, 0, 30)
-            row.BackgroundTransparency = 1
-            row.Parent = scrollFrame
+            local data = getOrCreateRow(i)
+            data.player = target.player
+            data.rootPart = target.rootPart
+            data.button.Text = target.name .. "  |  " .. math.floor(target.distance) .. "m"
+        end
 
-            -- HEAD IMAGE (TIDAK DIUBAH)
-            local headImg = Instance.new("ImageLabel")
-            headImg.Name = "Head"
-            headImg.Size = UDim2.new(0, 26, 0, 26)
-            headImg.Position = UDim2.new(0, 2, 0.5, -13)
-            headImg.BackgroundTransparency = 1
-            headImg.Parent = row
-            
-            pcall(function()
-                headImg.Image = Players:GetUserThumbnailAsync(target.player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-            end)
-
-            local headCorner = Instance.new("UICorner")
-            headCorner.CornerRadius = UDim.new(1, 13)
-            headCorner.Parent = headImg
-
-            -- NAME BUTTON (POSISI KEKANAN + SEPARATOR)
-            local btn = Instance.new("TextButton")
-            btn.Name = "PlayerBtn"
-            btn.Size = UDim2.new(1, -35, 1, 0)
-            btn.Position = UDim2.new(0, 42, 0, 0)
-            btn.BackgroundColor3 = Color3.fromRGB(60, 25, 25)
-            btn.BackgroundTransparency = 0.3
-            btn.BorderSizePixel = 0
-            btn.Text = target.name .. "  |  " .. math.floor(target.distance) .. "m"
-            btn.TextColor3 = Color3.fromRGB(255, 220, 100)
-            btn.TextSize = 11
-            btn.Font = Enum.Font.GothamSemibold
-            btn.TextXAlignment = Enum.TextXAlignment.Left
-            btn.Parent = row
-
-            local btnCorner = Instance.new("UICorner")
-            btnCorner.CornerRadius = UDim.new(0, 6)
-            btnCorner.Parent = btn
-
-            -- Store button dengan index untuk fast update
-            playerButtons[i] = {
-                button = btn,
-                row = row,
-                player = target.player,
-                rootPart = target.rootPart
-            }
-
-            btn.MouseButton1Click:Connect(function()
-                if target.rootPart and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                    player.Character.HumanoidRootPart.CFrame = target.rootPart.CFrame * CFrame.new(0, 0, -4)
-                end
-            end)
+        -- hide sisa row yang tidak dipakai
+        for i = #players + 1, #playerButtons do
+            local extra = playerButtons[i]
+            if extra then
+                extra.row.Visible = false
+            end
         end
     end
 
@@ -258,33 +312,31 @@ end
 local function updateDistancesOnly()
     if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
     local charRoot = player.Character.HumanoidRootPart.Position
-    
+
     for i, data in pairs(playerButtons) do
         if data.player and data.player.Character and data.player.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (data.player.Character.HumanoidRootPart.Position - charRoot).Magnitude
+            local rootPart = data.player.Character.HumanoidRootPart
+            local dist = (rootPart.Position - charRoot).Magnitude
             if dist <= MAX_DISTANCE then
                 data.button.Text = data.player.Name .. "  |  " .. math.floor(dist) .. "m"
             else
-                -- Hapus jika keluar range
-                data.row:Destroy()
-                playerButtons[i] = nil
+                -- jarak jauh, sembunyikan
+                data.row.Visible = false
             end
         end
     end
 end
 
 -- MAIN LOOP (pisah 2 loop)
--- 1. Full update setiap 3 detik (rebuild list)
--- 2. Distance only setiap 0.3 detik (smooth update)
 RunService.Heartbeat:Connect(function()
     local now = tick()
-    
+
     -- Fast distance update (0.3s)
     if now - lastUpdate > 0.3 then
         lastUpdate = now
         updateDistancesOnly()
     end
-    
+
     -- Full player list update (3s - jarang)
     if now - lastPlayerUpdate > 3 and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         lastPlayerUpdate = now
@@ -337,14 +389,16 @@ nextCorner.Parent = nextBtn
 nextBtn.MouseButton1Click:Connect(function()
     local validPlayers = {}
     for _, data in pairs(playerButtons) do
-        if data.player and data.player.Character then
+        if data.row.Visible and data.player and data.player.Character then
             table.insert(validPlayers, data)
         end
     end
-    
+
     if #validPlayers == 0 then return end
     currentIndex = currentIndex + 1
-    if currentIndex > #validPlayers then currentIndex = 1 end
+    if currentIndex > #validPlayers then
+        currentIndex = 1
+    end
     local targetData = validPlayers[currentIndex]
     if targetData and targetData.rootPart and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         player.Character.HumanoidRootPart.CFrame = targetData.rootPart.CFrame * CFrame.new(0, 0, -4)
