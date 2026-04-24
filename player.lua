@@ -68,7 +68,7 @@ rangeButton.MouseButton1Click:Connect(function()
     end
     MAX_DISTANCE = rangeOptions[currentRangeIndex]
     rangeButton.Text = MAX_DISTANCE .. "m"
-    updatePlayers() -- Update players saat range berubah
+    updatePlayers()
     populateList()
 end)
 
@@ -145,9 +145,9 @@ Players.PlayerRemoving:Connect(function(plr)
 end)
 
 -- VARIABLES
-local players = {}          -- hanya player yang terdeteksi dan dalam jarak
-local playerButtonsPool = {} -- reuse tombol; index row
-local playerButtons = {}    -- index => {row, button, player, rootPart}
+local players = {}
+local playerButtonsPool = {}
+local playerButtons = {}
 local currentIndex = 1
 local lastUpdate = 0
 local lastPlayerUpdate = 0
@@ -187,16 +187,14 @@ local function updatePlayers()
     end)
 end
 
--- Bersihkan UI hanya sebatas hide, bukan destroy semua
 local function clearList()
     for _, data in pairs(playerButtons) do
         data.row.Visible = false
     end
-    -- Kosongkan list playerButtons (visual tetap)
 end
 
--- BUAT tombol jika belum ada, reuse jika ada
-local function getOrCreateRow(index)
+-- FIXED: getOrCreateRow dengan parameter targetPlayer
+local function getOrCreateRow(index, targetPlayer)
     local data = playerButtons[index]
     if not data then
         local row = playerButtonsPool[index]
@@ -209,16 +207,25 @@ local function getOrCreateRow(index)
         end
         row.Visible = true
 
+        -- HEADSHOT IMAGE ✅ FIXED
         local headImg = row:FindFirstChild("Head") or Instance.new("ImageLabel")
         headImg.Name = "Head"
         headImg.Size = UDim2.new(0, 26, 0, 26)
         headImg.Position = UDim2.new(0, 2, 0.5, -13)
         headImg.BackgroundTransparency = 1
+        headImg.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        headImg.Image = "rbxassetid://0"  -- Default empty
         headImg.Parent = row
 
-        pcall(function()
-            headImg.Image = Players:GetUserThumbnailAsync(data.player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-        end)
+        -- LOAD THUMBNAIL SAAT PLAYER UDAH ADA ✅
+        if targetPlayer then
+            pcall(function()
+                local content, isReady = Players:GetUserThumbnailAsync(targetPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+                if isReady and content ~= "" then
+                    headImg.Image = content
+                end
+            end)
+        end
 
         local headCorner = headImg:FindFirstChild("UICorner") or Instance.new("UICorner")
         headCorner.CornerRadius = UDim.new(1, 13)
@@ -241,10 +248,9 @@ local function getOrCreateRow(index)
         btnCorner.CornerRadius = UDim.new(0, 6)
         btnCorner.Parent = btn
 
-        -- onetime click
         if not btn:GetAttribute("Connected") then
             btn.MouseButton1Click:Connect(function()
-                local target = data.rootPart
+                local target = data and data.rootPart
                 if target and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                     player.Character.HumanoidRootPart.CFrame = target.CFrame * CFrame.new(0, 0, -4)
                 end
@@ -255,8 +261,8 @@ local function getOrCreateRow(index)
         data = {
             row = row,
             button = btn,
-            player = nil,
-            rootPart = nil
+            player = targetPlayer,
+            rootPart = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
         }
         playerButtons[index] = data
     else
@@ -290,13 +296,12 @@ local function populateList()
         end
 
         for i, target in ipairs(players) do
-            local data = getOrCreateRow(i)
+            local data = getOrCreateRow(i, target.player)  -- ✅ PASS target.player
             data.player = target.player
             data.rootPart = target.rootPart
             data.button.Text = target.name .. "  |  " .. math.floor(target.distance) .. "m"
         end
 
-        -- hide sisa row yang tidak dipakai
         for i = #players + 1, #playerButtons do
             local extra = playerButtons[i]
             if extra then
@@ -308,7 +313,6 @@ local function populateList()
     scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
 end
 
--- FAST DISTANCE UPDATE (setiap 0.3s - TIDAK MENGGANTI LIST)
 local function updateDistancesOnly()
     if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
     local charRoot = player.Character.HumanoidRootPart.Position
@@ -319,25 +323,23 @@ local function updateDistancesOnly()
             local dist = (rootPart.Position - charRoot).Magnitude
             if dist <= MAX_DISTANCE then
                 data.button.Text = data.player.Name .. "  |  " .. math.floor(dist) .. "m"
+                data.row.Visible = true
             else
-                -- jarak jauh, sembunyikan
                 data.row.Visible = false
             end
         end
     end
 end
 
--- MAIN LOOP (pisah 2 loop)
+-- MAIN LOOP
 RunService.Heartbeat:Connect(function()
     local now = tick()
 
-    -- Fast distance update (0.3s)
     if now - lastUpdate > 0.3 then
         lastUpdate = now
         updateDistancesOnly()
     end
 
-    -- Full player list update (3s - jarang)
     if now - lastPlayerUpdate > 3 and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         lastPlayerUpdate = now
         updatePlayers()
@@ -368,7 +370,7 @@ toggleBtn.MouseButton1Click:Connect(function()
     toggleBtn.Text = isVisible and "Hamimsfy" or "Mini"
 end)
 
--- NEXT BUTTON (Draggable FIXED)
+-- NEXT BUTTON
 local nextBtn = Instance.new("TextButton")
 nextBtn.Size = UDim2.new(0, 80, 0, 30)
 nextBtn.Position = UDim2.new(1, -180, 0, 20)
@@ -404,3 +406,7 @@ nextBtn.MouseButton1Click:Connect(function()
         player.Character.HumanoidRootPart.CFrame = targetData.rootPart.CFrame * CFrame.new(0, 0, -4)
     end
 end)
+
+-- INITIAL UPDATE
+updatePlayers()
+populateList()
